@@ -1,8 +1,14 @@
 [workspace]
 members = [
-    "programs/*"
+    "programs/*",
+    "libraries/*"
 ]
 resolver = "2"
+
+[workspace.dependencies]
+fixed = "1.28"
+num-traits = "0.2"
+typenum = "1.17"
 
 [profile.release]
 overflow-checks = true

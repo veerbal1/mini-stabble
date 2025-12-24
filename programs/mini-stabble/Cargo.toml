@@ -22,6 +22,8 @@ custom-panic = []
 
 [dependencies]
 anchor-lang = "0.32.1"
+fixed = { workspace = true }
+fixed-exp = { path = "../../libraries/fixed-exp" }
 
 
 [lints.rust]
