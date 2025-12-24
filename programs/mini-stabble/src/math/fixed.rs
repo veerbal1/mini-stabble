@@ -85,3 +85,41 @@ impl FixedComplement for u128 {
         ONE.saturating_sub(self)
     }
 }
+
+pub trait FixedPow {
+    fn pow_down(self, exp: Self) -> Result<Self, MiniStabbleError>
+    where
+        Self: Sized;
+    fn pow_up(self, exp: Self) -> Result<Self, MiniStabbleError>
+    where
+        Self: Sized;
+}
+
+impl FixedPow for u128 {
+    fn pow_down(self, exp: Self) -> Result<Self, MiniStabbleError> {
+        match exp {
+            O => Ok(ONE),
+            ONE => Ok(self),
+            TWO => self.mul_down(self),
+            FOUR => {
+                // x^4 = (x^2)^2
+                let squared = self.mul_down(self)?;
+                squared.mul_down(squared)
+            }
+            _ => Err(MiniStabbleError::MathOverflow),
+        }
+    }
+
+    fn pow_up(self, exp: Self) -> Result<Self, MiniStabbleError> {
+        match exp {
+            0 => Ok(ONE),
+            ONE => Ok(self),
+            TWO => self.mul_up(self),
+            FOUR => {
+                let squared = self.mul_up(self)?;
+                squared.mul_up(squared)
+            }
+            _ => Err(MiniStabbleError::MathOverflow),
+        }
+    }
+}
