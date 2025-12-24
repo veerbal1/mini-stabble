@@ -70,3 +70,37 @@ pub fn calc_out_given_in(
 
     Ok(amount_out)
 }
+
+// ROUNDING STRATEGY (favor pool, user PAYS MORE):
+// amount_in should be LARGER
+// amount_in will be larger when: mul_up AND complement larger
+// complement (power - 1) larger when: power larger
+// power larger when: pow_up, base larger, exponent larger
+//   - For base > 1: larger exponent → larger power
+//   - exponent larger → div_up
+//   - base larger → div_up
+pub fn calc_in_given_out(
+    balance_in: u128,
+    weight_in: u128,
+    balance_out: u128,
+    weight_out: u128,
+    amount_out: u128,
+) -> Result<u128, MiniStabbleError> {
+    let base = balance_out.div_up(
+        balance_out
+            .checked_sub(amount_out)
+            .ok_or(MiniStabbleError::MathOverflow)?,
+    )?;
+
+    let exponent = weight_out.div_up(weight_in)?;
+
+    let power = base.pow_up(exponent)?;
+
+    let complement = power
+        .checked_sub(ONE)
+        .ok_or(MiniStabbleError::MathOverflow)?;
+
+    let amount_in = balance_in.mul_up(complement)?;
+
+    return Ok(amount_in);
+}
