@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 
 #[error_code]
-pub enum StabbleError {
+pub enum MiniStabbleError {
     #[msg("Math overflow")]
     MathOverflow,
 
