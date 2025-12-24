@@ -98,7 +98,7 @@ pub trait FixedPow {
 impl FixedPow for u128 {
     fn pow_down(self, exp: Self) -> Result<Self, MiniStabbleError> {
         match exp {
-            O => Ok(ONE),
+            0 => Ok(ONE),
             ONE => Ok(self),
             TWO => self.mul_down(self),
             FOUR => {
