@@ -123,3 +123,56 @@ impl FixedPow for u128 {
         }
     }
 }
+
+pub const ONE_U64: u64 = 1_000_000_000; // 10^9
+impl FixedMul for u64 {
+    fn mul_down(self, other: Self) -> Result<Self, MiniStabbleError> {
+        (self as u128)
+            .checked_mul(other as u128)
+            .and_then(|v| v.checked_div(ONE_U64 as u128))
+            .and_then(|v| u64::try_from(v).ok())
+            .ok_or(MiniStabbleError::MathOverflow)
+    }
+    fn mul_up(self, other: Self) -> Result<Self, MiniStabbleError> {
+        let product = (self as u128)
+            .checked_mul(other as u128)
+            .ok_or(MiniStabbleError::MathOverflow)?;
+
+        product
+            .checked_add(ONE_U64 as u128 - 1)
+            .and_then(|v| v.checked_div(ONE_U64 as u128))
+            .and_then(|v| u64::try_from(v).ok())
+            .ok_or(MiniStabbleError::MathOverflow)
+    }
+}
+impl FixedDiv for u64 {
+    fn div_down(self, other: Self) -> Result<Self, MiniStabbleError> {
+        if other == 0 {
+            return Err(MiniStabbleError::DivideByZero);
+        }
+        (self as u128)
+            .checked_mul(ONE_U64 as u128)
+            .and_then(|v| v.checked_div(other as u128))
+            .and_then(|v| u64::try_from(v).ok())
+            .ok_or(MiniStabbleError::MathOverflow)
+    }
+    fn div_up(self, other: Self) -> Result<Self, MiniStabbleError> {
+        if other == 0 {
+            return Err(MiniStabbleError::DivideByZero);
+        }
+        let numerator = (self as u128)
+            .checked_mul(ONE_U64 as u128)
+            .ok_or(MiniStabbleError::MathOverflow)?;
+
+        numerator
+            .checked_add(other as u128 - 1)
+            .and_then(|v| v.checked_div(other as u128))
+            .and_then(|v| u64::try_from(v).ok())
+            .ok_or(MiniStabbleError::MathOverflow)
+    }
+}
+impl FixedComplement for u64 {
+    fn complement(self) -> Self {
+        ONE_U64.saturating_sub(self)
+    }
+}
