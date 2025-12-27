@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 
 /// Struct representing a single token in the pool
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, Default)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, Default, InitSpace)]
 pub struct PoolToken {
     /// Mint address of the token
     pub mint: Pubkey,
@@ -44,6 +44,7 @@ impl PoolToken {
 }
 
 #[account]
+#[derive(InitSpace)]
 pub struct WeightedPool {
     /// PDA that signs for token transfers
     pub authority: Pubkey,
@@ -61,6 +62,7 @@ pub struct WeightedPool {
     pub swap_fee: u64,
 
     /// Token metadata
+    #[max_len(8)]
     pub tokens: Vec<PoolToken>,
 
     /// PDA bump seed
@@ -79,9 +81,12 @@ impl WeightedPool {
     pub fn get_weights(&self) -> Vec<u64> {
         self.tokens.iter().map(|t| t.weight).collect()
     }
+
+    pub const LEN: usize = 8 + Self::INIT_SPACE;
 }
 
 #[account]
+#[derive(InitSpace)]
 pub struct StablePool {
     pub authority: Pubkey,
     pub lp_mint: Pubkey,
@@ -101,6 +106,7 @@ pub struct StablePool {
     /// Ramp end timestamp  
     pub amp_end_ts: i64,
 
+    #[max_len(8)]
     pub tokens: Vec<PoolToken>,
     pub bump: u8,
 }
