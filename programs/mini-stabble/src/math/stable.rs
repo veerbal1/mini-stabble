@@ -211,6 +211,30 @@ pub fn calc_in_given_out(
     final_balance_in.checked_sub(balance_in)?.checked_add(1)
 }
 
+pub fn calc_lp_tokens_for_deposit_simple(
+    amp: u64,
+    balances: &[u64],
+    amounts_in: &[u64],
+    lp_supply: u64,
+) -> Option<u64> {
+    let current_d = calc_invariant(amp, balances)?;
+
+    let mut new_balances = Vec::with_capacity(balances.len());
+
+    for i in 0..balances.len() {
+        new_balances.push(balances[i].checked_add(amounts_in[i])?);
+    }
+
+    let new_d = calc_invariant(amp, &new_balances)?;
+
+    let lp_out = (lp_supply as u128)
+        .checked_mul(new_d as u128)?
+        .checked_div(current_d as u128)?
+        .checked_sub(lp_supply as u128)?;
+
+    u64::try_from(lp_out).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -328,7 +352,6 @@ mod tests {
 
     #[test]
     fn test_calc_invariant_four_tokens() {
-        // Test case from reference: 4 tokens
         let amp = 150_000;
         let balances = vec![
             40_000_000_000_000_000_u64,
@@ -344,6 +367,33 @@ mod tests {
             invariant, expected,
             "4-token invariant should match reference. Got {}, expected {}",
             invariant, expected
+        );
+    }
+
+    #[test]
+    fn test_calc_lp_tokens_for_deposit_simple() {
+        let amp = 5_000_000;
+        let balances = vec![1_000_000_000_000_u64, 1_000_000_000_000_u64]; // 1T each
+        let lp_supply = 2_000_000_000_000_u64; // 2T LP tokens
+
+        // Balanced deposit: 100B each token
+        let amounts_in = vec![100_000_000_000_u64, 100_000_000_000_u64];
+
+        let lp_out =
+            calc_lp_tokens_for_deposit_simple(amp, &balances, &amounts_in, lp_supply).unwrap();
+
+        println!("Balanced deposit: depositing 100B + 100B");
+        println!("LP tokens received: {}", lp_out);
+
+        // Should be ~10% of supply since we added 10% more tokens
+        // Expected: ~200B LP tokens (10% of 2T)
+        assert!(
+            lp_out > 190_000_000_000,
+            "Should get roughly 10% of LP supply"
+        );
+        assert!(
+            lp_out < 210_000_000_000,
+            "Should get roughly 10% of LP supply"
         );
     }
 }
