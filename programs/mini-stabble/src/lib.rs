@@ -17,18 +17,10 @@ pub mod mini_stabble {
     pub fn initialize_weighted_pool(
         ctx: Context<InitializeWeightedPool>,
         swap_fee: u64,
+        only_token_a_weight: u64
     ) -> Result<()> {
-        instructions::initialize_weighted_pool::handler(ctx, swap_fee)?;
+        instructions::initialize_weighted_pool::handler(ctx, swap_fee, only_token_a_weight)?;
         Ok(())
-    }
-
-    pub fn add_token_to_pool(
-        ctx: Context<AddTokenToPool>,
-        weight: u64,
-        scaling_factor: u64,
-        scaling_up: bool,
-    ) -> Result<()> {
-        instructions::add_token_to_pool::handler(ctx, weight, scaling_factor, scaling_up)
     }
 }
 

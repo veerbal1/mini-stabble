@@ -16,4 +16,10 @@ pub enum MiniStabbleError {
 
     #[msg("No profitable arbitrage opportunity")]
     NoProfitableArbitrage,
+
+    #[msg("Token A mint should be less than Token B Mint")]
+    MintOrderInvalid,
+
+    #[msg("Invalid Token Weight")]
+    InvalidWeight,
 }

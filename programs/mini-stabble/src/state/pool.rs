@@ -12,9 +12,6 @@ pub struct PoolToken {
     /// Number of decimals for this token's mint
     pub decimals: u8,
 
-    /// Whether scaling up (true) or down (false) is used for normalization
-    pub scaling_up: bool,
-
     /// Factor by which amounts are scaled for calculations
     pub scaling_factor: u64,
 
@@ -27,19 +24,11 @@ pub struct PoolToken {
 
 impl PoolToken {
     pub fn scale_amount_up(&self, raw_amount: u64) -> u64 {
-        if self.scaling_up {
-            raw_amount.checked_mul(self.scaling_factor).unwrap()
-        } else {
-            raw_amount.checked_div(self.scaling_factor).unwrap()
-        }
+        raw_amount.checked_mul(self.scaling_factor).unwrap()
     }
 
     pub fn scale_amount_down(&self, scaled_amount: u64) -> u64 {
-        if self.scaling_up {
-            scaled_amount.checked_div(self.scaling_factor).unwrap()
-        } else {
-            scaled_amount.checked_mul(self.scaling_factor).unwrap()
-        }
+        scaled_amount.checked_div(self.scaling_factor).unwrap()
     }
 }
 
