@@ -211,6 +211,9 @@ pub fn calc_in_given_out(
     final_balance_in.checked_sub(balance_in)?.checked_add(1)
 }
 
+use crate::math::fixed::{FixedComplement, FixedDiv, FixedMul, ONE_U64};
+
+/// Calculates LP tokens for deposit (simple, no fees - for proportional deposits)
 pub fn calc_lp_tokens_for_deposit_simple(
     amp: u64,
     balances: &[u64],
@@ -220,7 +223,6 @@ pub fn calc_lp_tokens_for_deposit_simple(
     let current_d = calc_invariant(amp, balances)?;
 
     let mut new_balances = Vec::with_capacity(balances.len());
-
     for i in 0..balances.len() {
         new_balances.push(balances[i].checked_add(amounts_in[i])?);
     }
@@ -233,6 +235,158 @@ pub fn calc_lp_tokens_for_deposit_simple(
         .checked_sub(lp_supply as u128)?;
 
     u64::try_from(lp_out).ok()
+}
+
+/// Calculates LP tokens for imbalanced deposit (with swap fees)
+/// Ring 2.10: LP token calculations for Stable pools
+pub fn calc_lp_tokens_for_deposit_with_fee(
+    amp: u64,
+    balances: &[u64],
+    amounts_in: &[u64],
+    lp_supply: u64,
+    current_invariant: u64,
+    swap_fee: u64, // e.g., 3_000_000 = 0.3%
+) -> Option<u64> {
+    // Step 1: Calculate sum of all balances (for computing weights)
+    let sum: u64 = balances.iter().sum();
+
+    // Step 2: Calculate balance ratios and weighted average (ideal ratio)
+    let mut balance_ratios = Vec::with_capacity(balances.len());
+    let mut ideal_ratio: u64 = 0;
+
+    for i in 0..balances.len() {
+        // ratio = (balance + amount_in) / balance
+        let new_balance = balances[i].checked_add(amounts_in[i])?;
+        let ratio = new_balance.div_down(balances[i]).ok()?;
+        balance_ratios.push(ratio);
+
+        // weight = balance / sum
+        let weight = balances[i].div_down(sum).ok()?;
+
+        // ideal_ratio += ratio * weight
+        ideal_ratio = ideal_ratio.checked_add(ratio.mul_down(weight).ok()?)?;
+    }
+
+    // Step 3: Calculate fee-adjusted amounts
+    let mut new_balances = Vec::with_capacity(balances.len());
+
+    for i in 0..balances.len() {
+        let amount_in_without_fee;
+
+        if balance_ratios[i] > ideal_ratio {
+            // This token has excess deposit → taxable portion
+            let non_taxable = balances[i]
+                .mul_down(ideal_ratio.saturating_sub(ONE_U64))
+                .ok()?;
+            let taxable = amounts_in[i].saturating_sub(non_taxable);
+
+            // Apply fee: taxable * (1 - swap_fee) + non_taxable
+            amount_in_without_fee = taxable
+                .mul_down(swap_fee.complement())
+                .ok()?
+                .checked_add(non_taxable)?;
+        } else {
+            // Below ideal ratio → no fee
+            amount_in_without_fee = amounts_in[i];
+        }
+
+        new_balances.push(balances[i].checked_add(amount_in_without_fee)?);
+    }
+
+    // Step 4: Calculate new invariant with fee-adjusted balances
+    let new_invariant = calc_invariant(amp, &new_balances)?;
+
+    // Step 5: LP tokens = supply × (new_d / old_d - 1)
+    let ratio = new_invariant.div_down(current_invariant).ok()?;
+
+    if ratio > ONE_U64 {
+        lp_supply.mul_down(ratio.saturating_sub(ONE_U64)).ok()
+    } else {
+        Some(0)
+    }
+}
+
+/// Calculates tokens out when burning LP tokens (single-sided withdraw)
+/// Ring 2.10: LP token calculations for Stable pools
+pub fn calc_token_out_for_lp_burn(
+    amp: u64,
+    balances: &[u64],
+    token_index: usize,
+    lp_amount_in: u64,
+    lp_supply: u64,
+    current_invariant: u64,
+    swap_fee: u64,
+) -> Option<u64> {
+    // Step 1: Calculate new invariant after burning LP
+    // new_invariant = current_invariant × (supply - lp_burn) / supply
+    let new_invariant = (current_invariant as u128)
+        .checked_mul(lp_supply.checked_sub(lp_amount_in)? as u128)?
+        .checked_div(lp_supply as u128)?;
+    let new_invariant = u64::try_from(new_invariant).ok()?;
+
+    let balance = balances[token_index];
+
+    // Step 2: Calculate what the token balance should be at new invariant
+    let new_balance =
+        get_token_balance_given_invariant_and_others(amp, balances, new_invariant, token_index)?;
+
+    // Step 3: Raw amount out (before fees)
+    let amount_out_without_fee = balance.checked_sub(new_balance)?;
+
+    // Step 4: Apply fees on the taxable portion
+    let sum: u64 = balances.iter().sum();
+    let current_weight = balance.div_down(sum).ok()?;
+    let taxable_percentage = current_weight.complement();
+
+    let taxable_amount = amount_out_without_fee.mul_up(taxable_percentage).ok()?;
+    let non_taxable_amount = amount_out_without_fee.saturating_sub(taxable_amount);
+
+    // Final amount = taxable * (1 - fee) + non_taxable
+    taxable_amount
+        .mul_down(swap_fee.complement())
+        .ok()?
+        .checked_add(non_taxable_amount)
+}
+
+/// Calculates proportional token amounts for a balanced withdraw
+/// Ring 2.11: Proportional liquidity math
+pub fn calc_tokens_out_proportional(
+    balances: &[u64],
+    lp_amount_in: u64,
+    lp_supply: u64,
+) -> Option<Vec<u64>> {
+    let mut amounts_out = Vec::with_capacity(balances.len());
+
+    for &balance in balances {
+        // amount_out = balance × lp_amount / lp_supply
+        let amount = (balance as u128)
+            .checked_mul(lp_amount_in as u128)?
+            .checked_div(lp_supply as u128)?;
+        amounts_out.push(u64::try_from(amount).ok()?);
+    }
+
+    Some(amounts_out)
+}
+
+/// Calculates the required token amounts for a proportional deposit
+/// Ring 2.11: Proportional liquidity math  
+pub fn calc_tokens_in_proportional(
+    balances: &[u64],
+    lp_amount_out: u64,
+    lp_supply: u64,
+) -> Option<Vec<u64>> {
+    let mut amounts_in = Vec::with_capacity(balances.len());
+
+    for &balance in balances {
+        // amount_in = balance × lp_amount / lp_supply (round up to be safe)
+        let amount = (balance as u128)
+            .checked_mul(lp_amount_out as u128)?
+            .checked_add(lp_supply as u128 - 1)? // round up
+            .checked_div(lp_supply as u128)?;
+        amounts_in.push(u64::try_from(amount).ok()?);
+    }
+
+    Some(amounts_in)
 }
 
 #[cfg(test)]
@@ -394,6 +548,87 @@ mod tests {
         assert!(
             lp_out < 210_000_000_000,
             "Should get roughly 10% of LP supply"
+        );
+    }
+
+    #[test]
+    fn test_calc_lp_tokens_with_fee_imbalanced() {
+        let amp = 5_000_000;
+        let balances = vec![1_000_000_000_000_u64, 1_000_000_000_000_u64];
+        let lp_supply = 2_000_000_000_000_u64;
+        let swap_fee = 3_000_000_u64; // 0.3%
+
+        let current_invariant = calc_invariant(amp, &balances).unwrap();
+
+        // Imbalanced deposit: 200B of token 0, 0 of token 1
+        let amounts_in = vec![200_000_000_000_u64, 0_u64];
+
+        let lp_out_with_fee = calc_lp_tokens_for_deposit_with_fee(
+            amp,
+            &balances,
+            &amounts_in,
+            lp_supply,
+            current_invariant,
+            swap_fee,
+        )
+        .unwrap();
+
+        let lp_out_simple =
+            calc_lp_tokens_for_deposit_simple(amp, &balances, &amounts_in, lp_supply).unwrap();
+
+        println!("Imbalanced deposit: 200B + 0");
+        println!("LP with fee: {}", lp_out_with_fee);
+        println!("LP without fee: {}", lp_out_simple);
+
+        // With fee should be less than without fee
+        assert!(
+            lp_out_with_fee < lp_out_simple,
+            "Fee should reduce LP tokens"
+        );
+        assert!(lp_out_with_fee > 0, "Should still get some LP tokens");
+    }
+
+    #[test]
+    fn test_calc_proportional_withdraw() {
+        let balances = vec![1_000_000_000_000_u64, 2_000_000_000_000_u64];
+        let lp_supply = 3_000_000_000_000_u64;
+
+        // Withdraw 10% of LP
+        let lp_amount = 300_000_000_000_u64;
+
+        let amounts_out = calc_tokens_out_proportional(&balances, lp_amount, lp_supply).unwrap();
+
+        println!("Proportional withdraw: {} LP", lp_amount);
+        println!("Token 0 out: {}", amounts_out[0]);
+        println!("Token 1 out: {}", amounts_out[1]);
+
+        // Should get 10% of each token
+        assert_eq!(amounts_out[0], 100_000_000_000, "Should get 10% of token 0");
+        assert_eq!(amounts_out[1], 200_000_000_000, "Should get 10% of token 1");
+    }
+
+    #[test]
+    fn test_calc_proportional_deposit() {
+        let balances = vec![1_000_000_000_000_u64, 2_000_000_000_000_u64];
+        let lp_supply = 3_000_000_000_000_u64;
+
+        // Want 10% more LP tokens
+        let lp_amount = 300_000_000_000_u64;
+
+        let amounts_in = calc_tokens_in_proportional(&balances, lp_amount, lp_supply).unwrap();
+
+        println!("Proportional deposit for {} LP", lp_amount);
+        println!("Token 0 needed: {}", amounts_in[0]);
+        println!("Token 1 needed: {}", amounts_in[1]);
+
+        // Should need 10% of each token (rounded up)
+        assert!(
+            amounts_in[0] >= 100_000_000_000,
+            "Should need ~10% of token 0"
+        );
+        assert!(
+            amounts_in[1] >= 200_000_000_000,
+            "Should need ~10% of token 1"
         );
     }
 }
