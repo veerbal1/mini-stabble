@@ -1,3 +1,4 @@
+use crate::math::fixed::{FixedComplement, FixedDiv, FixedMul, ONE_U64};
 use bn::{
     safe_math::{CheckedDivCeil, CheckedMulDiv, Downcast},
     uint192, U192,
@@ -210,8 +211,6 @@ pub fn calc_in_given_out(
     // Input = final_balance - current_balance + 1 (for rounding protection)
     final_balance_in.checked_sub(balance_in)?.checked_add(1)
 }
-
-use crate::math::fixed::{FixedComplement, FixedDiv, FixedMul, ONE_U64};
 
 /// Calculates LP tokens for deposit (simple, no fees - for proportional deposits)
 pub fn calc_lp_tokens_for_deposit_simple(
