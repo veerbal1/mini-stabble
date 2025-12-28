@@ -22,4 +22,10 @@ pub enum MiniStabbleError {
 
     #[msg("Invalid Token Weight")]
     InvalidWeight,
+
+    #[msg("Invalid Mint Provided")]
+    InvalidMint,
+
+    #[msg("PoolInActive")]
+    PoolInActive
 }

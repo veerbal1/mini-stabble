@@ -22,6 +22,10 @@ pub mod mini_stabble {
         instructions::initialize_weighted_pool::handler(ctx, swap_fee, only_token_a_weight)?;
         Ok(())
     }
+
+    pub fn swap(ctx: Context<Swap>, amount_in: u64, min_amount_out: u64) -> Result<()> {
+        instructions::swap::handler(ctx, amount_in, min_amount_out)
+    }
 }
 
 #[derive(Accounts)]
