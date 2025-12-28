@@ -26,7 +26,13 @@ pub mod mini_stabble {
     pub fn swap(ctx: Context<Swap>, amount_in: u64, min_amount_out: u64) -> Result<()> {
         instructions::swap::handler(ctx, amount_in, min_amount_out)
     }
-}
 
-#[derive(Accounts)]
-pub struct Initialize {}
+    pub fn deposit(
+        ctx: Context<Deposit>,
+        lp_amount: u64,
+        input_token_a_amount: u64,
+        input_token_b_amount: u64,
+    ) -> Result<()> {
+        instructions::deposit::handler(ctx, lp_amount, input_token_a_amount, input_token_b_amount)
+    }
+}
