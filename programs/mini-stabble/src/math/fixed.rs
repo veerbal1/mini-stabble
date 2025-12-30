@@ -1,10 +1,17 @@
 use crate::errors::MiniStabbleError;
+use fixed::types::U34F30;
+use fixed_exp::FixedPowF;
 
 pub const SCALE: u128 = 1_000_000_000;
 
+pub const ZERO: u128 = 0;
 pub const ONE: u128 = SCALE;
 pub const TWO: u128 = 2 * SCALE;
+pub const THREE: u128 = 3 * SCALE;
 pub const FOUR: u128 = 4 * SCALE;
+
+// 1 << 30 = 1073741824 - represents 1.0 in U34F30 format (30 fractional bits)
+pub const BITS_ONE: u64 = 1 << 30;
 
 pub trait FixedMul {
     fn mul_down(self, other: Self) -> Result<Self, MiniStabbleError>
@@ -96,30 +103,42 @@ pub trait FixedPow {
 }
 
 impl FixedPow for u128 {
-    fn pow_down(self, exp: Self) -> Result<Self, MiniStabbleError> {
-        match exp {
-            0 => Ok(ONE),
+    // Optimize for when y equals 1.0, 2.0, 3.0 or 4.0, as those are very simple to implement and occur often in
+    // 50/50, 80/20 and 60/20/20 Weighted Pools
+
+    fn pow_down(self, rhs: Self) -> Result<Self, MiniStabbleError> {
+        match rhs {
+            ZERO => Ok(ONE),
             ONE => Ok(self),
             TWO => self.mul_down(self),
+            THREE => self.mul_down(self)?.mul_down(self),
             FOUR => {
-                // x^4 = (x^2)^2
-                let squared = self.mul_down(self)?;
-                squared.mul_down(squared)
+                let square = self.mul_down(self)?;
+                square.mul_down(square)
             }
-            _ => Err(MiniStabbleError::MathOverflow),
+            _ => {
+                let base = U34F30::from_bits((self as u64).mul_down(BITS_ONE)?);
+                let exp = U34F30::from_bits((rhs as u64).mul_down(BITS_ONE)?);
+                Ok(base.powf(exp).ok_or(MiniStabbleError::MathOverflow)?.to_bits().div_down(BITS_ONE)? as u128)
+            }
         }
     }
 
-    fn pow_up(self, exp: Self) -> Result<Self, MiniStabbleError> {
-        match exp {
-            0 => Ok(ONE),
+    fn pow_up(self, rhs: Self) -> Result<Self, MiniStabbleError> {
+        match rhs {
+            ZERO => Ok(ONE),
             ONE => Ok(self),
             TWO => self.mul_up(self),
+            THREE => self.mul_up(self)?.mul_up(self),
             FOUR => {
-                let squared = self.mul_up(self)?;
-                squared.mul_up(squared)
+                let square = self.mul_up(self)?;
+                square.mul_up(square)
             }
-            _ => Err(MiniStabbleError::MathOverflow),
+            _ => {
+                let base = U34F30::from_bits((self as u64).mul_up(BITS_ONE)?);
+                let exp = U34F30::from_bits((rhs as u64).mul_up(BITS_ONE)?);
+                Ok(base.powf(exp).ok_or(MiniStabbleError::MathOverflow)?.to_bits().div_up(BITS_ONE)? as u128)
+            }
         }
     }
 }
