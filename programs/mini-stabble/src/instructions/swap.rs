@@ -119,7 +119,7 @@ pub fn handler(ctx: Context<Swap>, amount_in: u64, min_amount_out: u64) -> Resul
         cpi_accounts_out,
         signer_seeds,
     );
-    
+
     let amount_out_u64 = amount_out_after_fee.try_into()?;
     token::transfer(cpi_ctx_out, amount_out_u64)?;
     // Step 6 ends
