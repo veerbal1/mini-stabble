@@ -27,5 +27,11 @@ pub enum MiniStabbleError {
     InvalidMint,
 
     #[msg("PoolInActive")]
-    PoolInActive
+    PoolInActive,
+
+    #[msg("AmpTooLow")]
+    AmpTooLow,
+
+    #[msg("AmpTooHigh")]
+    AmpTooHigh
 }

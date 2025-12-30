@@ -112,4 +112,6 @@ impl StablePool {
     pub fn get_current_amp(&self) -> u64 {
         self.amp
     }
+
+    pub const LEN: usize = 8 + Self::INIT_SPACE;
 }

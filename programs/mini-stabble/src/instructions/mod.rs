@@ -9,3 +9,6 @@ pub use deposit::*;
 
 pub mod deposit_unbalanced;
 pub use deposit_unbalanced::*;
+
+pub mod initialize_stable_pool;
+pub use initialize_stable_pool::*;

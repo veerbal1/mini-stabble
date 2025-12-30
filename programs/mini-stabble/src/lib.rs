@@ -42,6 +42,19 @@ pub mod mini_stabble {
         input_amount_a: u64,
         input_amount_b: u64,
     ) -> Result<()> {
-        instructions::deposit_unbalanced::handler(ctx, min_lp_amount, input_amount_a, input_amount_b)
+        instructions::deposit_unbalanced::handler(
+            ctx,
+            min_lp_amount,
+            input_amount_a,
+            input_amount_b,
+        )
+    }
+
+    pub fn initialize_stable_pool(
+        ctx: Context<InitializeStablePool>,
+        swap_fee: u64,
+        amp: u64,
+    ) -> Result<()> {
+        instructions::initialize_stable_pool::handler(ctx, swap_fee, amp)
     }
 }
