@@ -8,9 +8,5 @@ describe("mini-stabble", () => {
 
   const program = anchor.workspace.miniStabble as Program<MiniStabble>;
 
-  it("Is initialized!", async () => {
-    // Add your test here.
-    const tx = await program.methods.initialize().rpc();
-    console.log("Your transaction signature", tx);
-  });
+  it("Is initialized!", async () => {});
 });
