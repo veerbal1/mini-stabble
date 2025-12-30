@@ -35,4 +35,13 @@ pub mod mini_stabble {
     ) -> Result<()> {
         instructions::deposit::handler(ctx, lp_amount, input_token_a_amount, input_token_b_amount)
     }
+
+    pub fn deposit_unbalanced(
+        ctx: Context<DepositUnbalanced>,
+        min_lp_amount: u64,
+        input_amount_a: u64,
+        input_amount_b: u64,
+    ) -> Result<()> {
+        instructions::deposit_unbalanced::handler(ctx, min_lp_amount, input_amount_a, input_amount_b)
+    }
 }
