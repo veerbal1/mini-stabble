@@ -88,7 +88,7 @@ pub fn handler(ctx: Context<Swap>, amount_in: u64, min_amount_out: u64) -> Resul
 
     // Step 5 starts - Slippage check
     require!(
-        amount_out_after_fee >= min_amount_out.into(),
+        amount_out_after_fee >= u128::from(min_amount_out),
         MiniStabbleError::SlippageExceeded
     );
     // Step 5 ends - Slippage Check
