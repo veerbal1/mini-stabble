@@ -12,3 +12,6 @@ pub use deposit_unbalanced::*;
 
 pub mod initialize_stable_pool;
 pub use initialize_stable_pool::*;
+
+pub mod stable_swap;
+pub use stable_swap::*;
