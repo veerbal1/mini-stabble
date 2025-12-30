@@ -21,59 +21,47 @@ fn amp_precision_u192() -> U192 {
 /// Calculates the StableSwap invariant D using Newton-Raphson iteration.
 /// Matches reference: libraries/math/src/stable_math.rs calc_invariant
 pub fn calc_invariant(amp: u64, balances: &[u64]) -> Option<u64> {
+    let n = balances.len() as u64;
     let sum: u64 = balances.iter().sum();
 
     if sum == 0 {
         return Some(0);
     }
 
-    let num_tokens = balances.len();
-    let num_tokens_u64 = num_tokens as u64;
-    let num_tokens_u192 = uint192!(num_tokens_u64);
+    let ann = uint192!(amp.checked_mul(n)?);
+    let sum_u192 = uint192!(sum);
+    let n_u192 = uint192!(n);
+    let mut d = uint192!(sum);
 
-    let amp_times_total = amp.checked_mul(num_tokens_u64)?; // Ann
-
-    let sum = uint192!(sum);
-    let mut invariant = sum; // D
-
-    // Precompute balances[i] * num_tokens
-    let mut balances_times: Vec<U192> = Vec::with_capacity(balances.len());
-    for &balance in balances.iter() {
-        balances_times.push(uint192!(balance.checked_mul(num_tokens_u64)?));
-    }
-
-    for _ in 0..64 {
-        let mut p = invariant;
-
-        for &balance_times in balances_times.iter() {
-            // (p * invariant) / (balances[i] * num_tokens)
-            p = p.checked_mul_div_down(invariant, balance_times)?;
+    for _ in 0..MAX_LOOP_LIMIT {
+        let mut dp = d;
+        for &balance in balances.iter() {
+            dp = dp.checked_mul_div_down(d, n_u192.checked_mul(uint192!(balance))?)?;
         }
 
-        let prev_invariant = invariant;
+        // d_new = (Ann * S + n * D_P * AMP_PRECISION) * D / ((Ann - AMP_PRECISION) * D + (n + 1) * D_P * AMP_PRECISION)
+        let amp_prec = uint192!(AMP_PRECISION);
 
-        // Newton-Raphson formula:
-        // D = (Ann * S / AMP_PRECISION + n * D_P) * D / ((Ann - AMP_PRECISION) * D / AMP_PRECISION + (n + 1) * D_P)
-        invariant = (uint192!(amp_times_total)
-            .checked_mul_div_down(sum, amp_precision_u192())?
-            .checked_add(p.checked_mul(num_tokens_u192)?))?
-        .checked_mul_div_down(
-            invariant,
-            uint192!(amp_times_total.checked_sub(AMP_PRECISION)?)
-                .checked_mul_div_down(invariant, amp_precision_u192())?
-                .checked_add(uint192!(num_tokens.saturating_add(1)).checked_mul(p)?)?,
-        )?;
+        let num = ann
+            .checked_mul(sum_u192)?
+            .checked_add(n_u192.checked_mul(dp)?.checked_mul(amp_prec)?)?;
 
-        let invariant_u64 = invariant.as_u64()?;
-        let prev_invariant_u64 = prev_invariant.as_u64()?;
+        let den = ann
+            .checked_sub(amp_prec)?
+            .checked_mul(d)?
+            .checked_add(n_u192.checked_add(uint192!(1))?.checked_mul(dp)?.checked_mul(amp_prec)?)?;
 
-        if invariant_u64 > prev_invariant_u64 {
-            if invariant_u64.saturating_sub(prev_invariant_u64) <= DEFAULT_INV_THRESHOLD {
-                return Some(invariant_u64);
-            }
-        } else if prev_invariant_u64.saturating_sub(invariant_u64) <= DEFAULT_INV_THRESHOLD {
-            return Some(invariant_u64);
+        let d_new = num.checked_mul(d)?.checked_div(den)?;
+
+        let diff = if d_new > d {
+            d_new.checked_sub(d)?
+        } else {
+            d.checked_sub(d_new)?
+        };
+        if diff <= uint192!(DEFAULT_INV_THRESHOLD) {
+            return d_new.as_u64();
         }
+        d = d_new;
     }
 
     None
