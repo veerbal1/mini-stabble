@@ -104,3 +104,24 @@ pub fn calc_in_given_out(
 
     return Ok(amount_in);
 }
+
+pub fn calc_lp_to_mint(
+    lp_supply: u128,
+    k_new: u128,
+    k_old: u128,
+    sum_of_weights: u128,
+) -> Result<u128, MiniStabbleError> {
+    // lp minted = lp supply * [((k_new / k_old) ^ sum of weights) - 1]
+    let base: u128 = k_new
+        .div_down(k_old)?;
+    let base_pow = base.pow_down(sum_of_weights)?;
+
+    let right = base_pow
+        .checked_sub(ONE)
+        .ok_or(MiniStabbleError::MathOverflow)?;
+
+    let net_minted = lp_supply
+        .mul_down(right)?;
+
+    Ok(net_minted)
+}
