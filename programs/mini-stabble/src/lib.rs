@@ -65,4 +65,12 @@ pub mod mini_stabble {
     ) -> Result<()> {
         instructions::stable_deposit::handler(ctx, max_amount_a, max_amount_b, lp_amount)
     }
+
+    pub fn stable_swap(
+        ctx: Context<StableSwap>,
+        amount_in: u64,
+        min_amount_out: u64,
+    ) -> Result<()> {
+        instructions::stable_swap::handler(ctx, amount_in, min_amount_out)
+    }
 }
