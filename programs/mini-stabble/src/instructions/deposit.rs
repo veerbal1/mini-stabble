@@ -59,8 +59,6 @@ pub fn handler(
     input_token_a_amount: u64,
     input_token_b_amount: u64,
 ) -> Result<()> {
-    require!(lp_amount > 0, MiniStabbleError::InvalidAmount);
-
     let pool = &mut ctx.accounts.pool;
     require!(pool.is_active, MiniStabbleError::PoolInActive);
 
@@ -95,8 +93,13 @@ pub fn handler(
             .checked_mul(scaled_input_token_b_amount as u128)
             .ok_or(MiniStabbleError::MathOverflow)?;
         let lp_to_mint = u64::try_from(amount_product.isqrt())?;
-        (lp_to_mint, scaled_input_token_a_amount, scaled_input_token_b_amount)
+        (
+            lp_to_mint,
+            scaled_input_token_a_amount,
+            scaled_input_token_b_amount,
+        )
     } else {
+        require!(lp_amount > 0, MiniStabbleError::InvalidAmount);
         // Normal Deposit
         let token_a_required = u64::try_from(
             (lp_amount as u128)
