@@ -60,7 +60,6 @@ pub fn handler(
     max_amount_b: u64,
     lp_amount: u64,
 ) -> Result<()> {
-    require!(lp_amount > 0, MiniStabbleError::InvalidAmount);
     require!(max_amount_a > 0, MiniStabbleError::InvalidAmount);
     require!(max_amount_b > 0, MiniStabbleError::InvalidAmount);
 
@@ -87,6 +86,7 @@ pub fn handler(
             .isqrt();
             (u64::try_from(lp)?, scaled_max_amount_a, scaled_max_amount_b)
         } else {
+            require!(lp_amount > 0, MiniStabbleError::InvalidAmount);
             let token_a_balance_scaled = pool.tokens[token_a_index].balance;
             let token_b_balance_scaled = pool.tokens[token_b_index].balance;
 

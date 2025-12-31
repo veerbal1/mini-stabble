@@ -31,6 +31,7 @@ describe("mini-stabble", () => {
   let mintA: PublicKey;
   let mintB: PublicKey;
   let lpMint: Keypair;
+  let stableLpMint: Keypair;
 
   // PDAs
   let authority: PublicKey;
@@ -102,6 +103,8 @@ describe("mini-stabble", () => {
       payer,
       1_000_000_000_000
     );
+
+    stableLpMint = Keypair.generate();
   });
 
   const getPoolPDA = () => {
@@ -121,6 +124,13 @@ describe("mini-stabble", () => {
   const getVaultBPDA = (pool: PublicKey) => {
     return PublicKey.findProgramAddressSync(
       [POOL_VAULT_SEED, pool.toBuffer(), mintB.toBuffer()],
+      program.programId
+    )[0];
+  };
+
+  const getStablePoolPDA = () => {
+    return PublicKey.findProgramAddressSync(
+      [STABLE_POOL_SEED, stableLpMint.publicKey.toBuffer()],
       program.programId
     )[0];
   };
@@ -249,8 +259,48 @@ describe("mini-stabble", () => {
     });
   });
 
-  describe("Stable Pool", () => {
-    it("initializes stable pool", async () => {});
+  describe("Stable Pool", async () => {
+    it("initializes stable pool", async () => {
+      let tx = await program.methods
+        .initializeStablePool(
+          new BN(3_000_000), // swap_fee
+          new BN(100) // amp (100 is typical for stables)
+        )
+        .accounts({
+          lpMint: stableLpMint.publicKey,
+          tokenMintA: mintA,
+          tokenMintB: mintB,
+          payer: payer.publicKey,
+        })
+        .signers([stableLpMint])
+        .rpc();
+
+      // Assert stable pool PDA created and mints correct
+      const stablePool = getStablePoolPDA();
+
+      const stablePoolAccount = await provider.connection.getAccountInfo(
+        stablePool
+      );
+
+      expect(stablePoolAccount.owner.toBase58()).to.be.eq(
+        program.programId.toBase58()
+      );
+
+      // // Also check the LP mint exists
+      const stableLpMintAccount = await getMint(
+        provider.connection,
+        stableLpMint.publicKey
+      );
+      expect(stableLpMintAccount.mintAuthority.toBase58()).to.equal(
+        authority.toBase58()
+      );
+      expect(Number(stableLpMintAccount.supply)).to.equal(0);
+
+      const poolAccount = await program.account.stablePool.fetch(stablePool);
+      expect(poolAccount.amp.toNumber()).to.equal(100 * 1000);
+      expect(poolAccount.swapFee.toNumber()).to.equal(3_000_000);
+      expect(poolAccount.isActive).to.be.true;
+    });
     it("deposits liquidity", async () => {});
     it("swaps tokens", async () => {});
   });
