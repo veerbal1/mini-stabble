@@ -3,6 +3,24 @@ use crate::{
     math::fixed::{FixedComplement, FixedDiv, FixedMul, FixedPow, ONE},
 };
 
+pub fn calc_spot_price(
+    balance_in: u128,
+    weight_in: u128,
+    balance_out: u128,
+    weight_out: u128,
+) -> Result<u128, MiniStabbleError> {
+    if balance_in == 0 {
+        return Err(MiniStabbleError::DivideByZero);
+    }
+
+    if weight_out == 0 {
+        return Err(MiniStabbleError::DivideByZero);
+    }
+
+    let price = (weight_in.mul_down(balance_out)?).div_down(weight_out.mul_down(balance_in)?)?;
+    Ok(price)
+}
+
 pub fn calc_invariant(balances: &[u128], weights: &[u128]) -> Result<u128, MiniStabbleError> {
     if balances.len() != weights.len() || balances.len() == 0 {
         return Err(MiniStabbleError::InvalidAmount);
@@ -112,16 +130,14 @@ pub fn calc_lp_to_mint(
     sum_of_weights: u128,
 ) -> Result<u128, MiniStabbleError> {
     // lp minted = lp supply * [((k_new / k_old) ^ sum of weights) - 1]
-    let base: u128 = k_new
-        .div_down(k_old)?;
+    let base: u128 = k_new.div_down(k_old)?;
     let base_pow = base.pow_down(sum_of_weights)?;
 
     let right = base_pow
         .checked_sub(ONE)
         .ok_or(MiniStabbleError::MathOverflow)?;
 
-    let net_minted = lp_supply
-        .mul_down(right)?;
+    let net_minted = lp_supply.mul_down(right)?;
 
     Ok(net_minted)
 }
