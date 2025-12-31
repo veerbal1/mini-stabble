@@ -103,8 +103,59 @@ describe("mini-stabble", () => {
     );
   });
 
+  const getPoolPDA = () => {
+    return PublicKey.findProgramAddressSync(
+      [WEIGHT_POOL_SEED, lpMint.publicKey.toBuffer()],
+      program.programId
+    )[0];
+  };
+
+  const getVaultAPDA = (pool: PublicKey) => {
+    return PublicKey.findProgramAddressSync(
+      [POOL_VAULT_SEED, pool.toBuffer(), mintA.toBuffer()],
+      program.programId
+    )[0];
+  };
+
+  const getVaultBPDA = (pool: PublicKey) => {
+    return PublicKey.findProgramAddressSync(
+      [POOL_VAULT_SEED, pool.toBuffer(), mintB.toBuffer()],
+      program.programId
+    )[0];
+  };
+
   describe("weighted pool", () => {
-    it("initializes weighted pool", async () => {});
+    it("initializes weighted pool", async () => {
+      const pool = getPoolPDA();
+
+      await program.methods
+        .initializeWeightedPool(
+          new BN(3_000_000), // swap_fee (0.3%)
+          new BN(500000000) // weight_a (0.5 in SCALE = 5e17)
+        )
+        .accounts({
+          lpMint: lpMint.publicKey,
+          tokenMintA: mintA,
+          tokenMintB: mintB,
+          payer: payer.publicKey,
+        })
+        .signers([lpMint])
+        .rpc();
+
+      // Assert
+      const poolAccount = await program.account.weightedPool.fetch(pool);
+      expect(poolAccount.swapFee.toNumber()).to.equal(3_000_000);
+      expect(poolAccount.tokens[0].weight.toNumber()).to.equal(500000000);
+      expect(poolAccount.tokens[1].weight.toNumber()).to.equal(500000000);
+      expect(poolAccount.lpMint.toBase58()).to.equal(lpMint.publicKey.toBase58());
+      expect(poolAccount.tokens[0].mint.toBase58()).to.equal(mintA.toBase58());
+      expect(poolAccount.tokens[1].mint.toBase58()).to.equal(mintB.toBase58());
+      expect(poolAccount.tokens.length).to.equal(2);
+      expect(poolAccount.bump).to.be.a("number");
+      expect(poolAccount.isActive).to.be.true;
+      expect(poolAccount.tokens[0].balance.toNumber()).to.equal(0);
+      expect(poolAccount.tokens[1].balance.toNumber()).to.equal(0);
+    });
     it("deposits liquidity", async () => {});
     it("swaps tokens", async () => {});
   });
