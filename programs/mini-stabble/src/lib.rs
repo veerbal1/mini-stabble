@@ -56,4 +56,13 @@ pub mod mini_stabble {
     ) -> Result<()> {
         instructions::initialize_stable_pool::handler(ctx, swap_fee, amp)
     }
+
+    pub fn stable_deposit(
+        ctx: Context<StableDeposit>,
+        max_amount_a: u64,
+        max_amount_b: u64,
+        lp_amount: u64,
+    ) -> Result<()> {
+        instructions::stable_deposit::handler(ctx, max_amount_a, max_amount_b, lp_amount)
+    }
 }

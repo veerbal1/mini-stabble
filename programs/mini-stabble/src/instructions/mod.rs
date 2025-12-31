@@ -15,3 +15,6 @@ pub use initialize_stable_pool::*;
 
 pub mod stable_swap;
 pub use stable_swap::*;
+
+pub mod stable_deposit;
+pub use stable_deposit::*;
