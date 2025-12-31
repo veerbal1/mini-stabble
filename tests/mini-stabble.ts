@@ -8,6 +8,7 @@ import {
   getAccount,
   TOKEN_PROGRAM_ID,
   ASSOCIATED_TOKEN_PROGRAM_ID,
+  getMint,
 } from "@solana/spl-token";
 import { PublicKey, Keypair, SystemProgram } from "@solana/web3.js";
 import { expect } from "chai";
@@ -147,7 +148,9 @@ describe("mini-stabble", () => {
       expect(poolAccount.swapFee.toNumber()).to.equal(3_000_000);
       expect(poolAccount.tokens[0].weight.toNumber()).to.equal(500000000);
       expect(poolAccount.tokens[1].weight.toNumber()).to.equal(500000000);
-      expect(poolAccount.lpMint.toBase58()).to.equal(lpMint.publicKey.toBase58());
+      expect(poolAccount.lpMint.toBase58()).to.equal(
+        lpMint.publicKey.toBase58()
+      );
       expect(poolAccount.tokens[0].mint.toBase58()).to.equal(mintA.toBase58());
       expect(poolAccount.tokens[1].mint.toBase58()).to.equal(mintB.toBase58());
       expect(poolAccount.tokens.length).to.equal(2);
@@ -156,8 +159,94 @@ describe("mini-stabble", () => {
       expect(poolAccount.tokens[0].balance.toNumber()).to.equal(0);
       expect(poolAccount.tokens[1].balance.toNumber()).to.equal(0);
     });
-    it("deposits liquidity", async () => {});
-    it("swaps tokens", async () => {});
+    it("deposits liquidity", async () => {
+      const pool = getPoolPDA();
+      const vaultA = getVaultAPDA(pool);
+      const vaultB = getVaultBPDA(pool);
+
+      const lpMintAccount = await getMint(
+        provider.connection,
+        lpMint.publicKey
+      );
+      expect(Number(lpMintAccount.supply)).to.be.eq(0);
+
+      const depositAmount = new BN(100000000000);
+      await program.methods
+        .deposit(
+          new BN(0), // lp_amount (0 = first deposit, calculated internally)
+          depositAmount, // max token A
+          depositAmount // max token B
+        )
+        .accounts({
+          pool,
+          user: payer.publicKey,
+          lpMint: lpMint.publicKey,
+          tokenAMint: mintA,
+          tokenBMint: mintB,
+          userTokenA,
+          userTokenB,
+        })
+        .rpc();
+
+      // Expect statements
+      const poolAccount = await program.account.weightedPool.fetch(pool);
+      expect(poolAccount.tokens[0].balance.toString()).to.equal(
+        depositAmount.toString()
+      );
+      expect(poolAccount.tokens[1].balance.toString()).to.equal(
+        depositAmount.toString()
+      );
+      expect(poolAccount.lpMint.toBase58()).to.equal(
+        lpMint.publicKey.toBase58()
+      );
+      expect(poolAccount.tokens.length).to.equal(2);
+      expect(poolAccount.isActive).to.be.true;
+
+      // Check LP mint supply after deposit
+      const lpMintAccount1 = await getMint(
+        provider.connection,
+        lpMint.publicKey
+      );
+      // The LP supply after first deposit should be > 0
+      expect(Number(lpMintAccount1.supply)).to.be.greaterThan(0);
+    });
+    it("swaps tokens", async () => {
+      const pool = getPoolPDA();
+      const vaultA = getVaultAPDA(pool);
+      const vaultB = getVaultBPDA(pool);
+
+      const amountIn = new BN(100000000000);
+      const minAmountOut = new BN(1);
+
+      // Get balances BEFORE
+      const userABefore = await getAccount(provider.connection, userTokenA);
+      const userBBefore = await getAccount(provider.connection, userTokenB);
+
+      await program.methods
+        .swap(amountIn, minAmountOut)
+        .accounts({
+          pool,
+          mintIn: mintA,
+          mintOut: mintB,
+          userTokenIn: userTokenA,
+          userTokenOut: userTokenB,
+          vaultTokenIn: vaultA,
+          vaultTokenOut: vaultB,
+          user: payer.publicKey,
+        })
+        .rpc();
+
+      // Get balances AFTER
+      const userAAfter = await getAccount(provider.connection, userTokenA);
+      const userBAfter = await getAccount(provider.connection, userTokenB);
+
+      expect(Number(userAAfter.amount)).to.be.lessThan(
+        Number(userABefore.amount)
+      );
+      expect(Number(userBAfter.amount)).to.be.greaterThan(
+        Number(userBBefore.amount)
+      );
+    });
   });
 
   describe("Stable Pool", () => {
