@@ -135,6 +135,20 @@ describe("mini-stabble", () => {
     )[0];
   };
 
+  const getStableVaultAPDA = (pool: PublicKey) => {
+    return PublicKey.findProgramAddressSync(
+      [POOL_VAULT_SEED, pool.toBuffer(), mintA.toBuffer()],
+      program.programId
+    )[0];
+  };
+
+  const getStableVaultBPDA = (pool: PublicKey) => {
+    return PublicKey.findProgramAddressSync(
+      [POOL_VAULT_SEED, pool.toBuffer(), mintB.toBuffer()],
+      program.programId
+    )[0];
+  };
+
   describe("weighted pool", () => {
     it("initializes weighted pool", async () => {
       const pool = getPoolPDA();
@@ -286,7 +300,7 @@ describe("mini-stabble", () => {
         program.programId.toBase58()
       );
 
-      // // Also check the LP mint exists
+      // Also check the LP mint exists
       const stableLpMintAccount = await getMint(
         provider.connection,
         stableLpMint.publicKey
@@ -301,7 +315,80 @@ describe("mini-stabble", () => {
       expect(poolAccount.swapFee.toNumber()).to.equal(3_000_000);
       expect(poolAccount.isActive).to.be.true;
     });
-    it("deposits liquidity", async () => {});
-    it("swaps tokens", async () => {});
+
+    it("deposits liquidity", async () => {
+      const pool = getStablePoolPDA();
+      const vaultA = getStableVaultAPDA(pool);
+      const vaultB = getStableVaultBPDA(pool);
+
+      // Check LP supply before
+      const lpMintBefore = await getMint(provider.connection, stableLpMint.publicKey);
+      expect(Number(lpMintBefore.supply)).to.equal(0);
+
+      const depositAmount = new BN(100_000_000_000); // 100 tokens
+
+      await program.methods
+        .stableDeposit(
+          depositAmount,  // max_amount_a
+          depositAmount,  // max_amount_b
+          new BN(0)       // lp_amount (0 for first deposit)
+        )
+        .accounts({
+          pool,
+          mintA: mintA,
+          mintB: mintB,
+          lpMint: stableLpMint.publicKey,
+          vaultTokenA: vaultA,
+          vaultTokenB: vaultB,
+          userTokenA,
+          userTokenB,
+          user: payer.publicKey,
+        })
+        .rpc();
+
+      // Assert LP minted
+      const lpMintAfter = await getMint(provider.connection, stableLpMint.publicKey);
+      expect(Number(lpMintAfter.supply)).to.be.greaterThan(0);
+
+      // Assert pool balances updated
+      const poolAccount = await program.account.stablePool.fetch(pool);
+      expect(poolAccount.tokens[0].balance.toString()).to.equal(depositAmount.toString());
+      expect(poolAccount.tokens[1].balance.toString()).to.equal(depositAmount.toString());
+    });
+
+    it("swaps tokens", async () => {
+      const pool = getStablePoolPDA();
+      const vaultA = getStableVaultAPDA(pool);
+      const vaultB = getStableVaultBPDA(pool);
+
+      // Get balances BEFORE
+      const userABefore = await getAccount(provider.connection, userTokenA);
+      const userBBefore = await getAccount(provider.connection, userTokenB);
+
+      const amountIn = new BN(10_000_000_000); // 10 tokens
+      const minAmountOut = new BN(1);
+
+      await program.methods
+        .stableSwap(amountIn, minAmountOut)
+        .accounts({
+          pool,
+          mintIn: mintA,
+          mintOut: mintB,
+          vaultTokenIn: vaultA,
+          vaultTokenOut: vaultB,
+          userTokenIn: userTokenA,
+          userTokenOut: userTokenB,
+          user: payer.publicKey,
+        })
+        .rpc();
+
+      // Get balances AFTER
+      const userAAfter = await getAccount(provider.connection, userTokenA);
+      const userBAfter = await getAccount(provider.connection, userTokenB);
+
+      // Assert: user A decreased, user B increased
+      expect(Number(userAAfter.amount)).to.be.lessThan(Number(userABefore.amount));
+      expect(Number(userBAfter.amount)).to.be.greaterThan(Number(userBBefore.amount));
+    });
   });
 });
