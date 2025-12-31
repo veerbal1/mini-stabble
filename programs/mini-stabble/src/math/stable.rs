@@ -18,6 +18,16 @@ fn amp_precision_u192() -> U192 {
     uint192!(AMP_PRECISION)
 }
 
+pub fn calc_spot_price(
+    amp: u64,
+    balances: &[u64],
+    token_index_in: usize,
+    token_index_out: usize,
+    ref_amount: u64
+) -> Option<u64> {
+    calc_out_given_in(amp, balances, token_index_in, token_index_out, ref_amount)
+}
+
 /// Calculates the StableSwap invariant D using Newton-Raphson iteration.
 /// Matches reference: libraries/math/src/stable_math.rs calc_invariant
 pub fn calc_invariant(amp: u64, balances: &[u64]) -> Option<u64> {
@@ -46,10 +56,12 @@ pub fn calc_invariant(amp: u64, balances: &[u64]) -> Option<u64> {
             .checked_mul(sum_u192)?
             .checked_add(n_u192.checked_mul(dp)?.checked_mul(amp_prec)?)?;
 
-        let den = ann
-            .checked_sub(amp_prec)?
-            .checked_mul(d)?
-            .checked_add(n_u192.checked_add(uint192!(1))?.checked_mul(dp)?.checked_mul(amp_prec)?)?;
+        let den = ann.checked_sub(amp_prec)?.checked_mul(d)?.checked_add(
+            n_u192
+                .checked_add(uint192!(1))?
+                .checked_mul(dp)?
+                .checked_mul(amp_prec)?,
+        )?;
 
         let d_new = num.checked_mul(d)?.checked_div(den)?;
 
