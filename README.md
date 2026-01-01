@@ -52,9 +52,12 @@ mini-stabble/
 
 All calculations use fixed-point integers to avoid floating-point non-determinism:
 
-$$\text{SCALE} = 10^9$$
+```
+SCALE = 10^9 (1 billion)
 
-$$value = raw\_integer \times 10^{-9}$$
+Example: 0.5 is stored as 500,000,000
+         1.0 is stored as 1,000,000,000
+```
 
 ### Weighted Pool Math (Balancer-style)
 
@@ -86,12 +89,13 @@ $$4A(x + y) + D = 4AD + \frac{D^3}{4xy}$$
 
 **Newton's Iteration:**
 
-$$D_{new} = \frac{(A \cdot n \cdot S + n \cdot D_P \cdot \text{AMP\_PRECISION}) \times D}{(A \cdot n - \text{AMP\_PRECISION}) \times D + (n+1) \cdot D_P \cdot \text{AMP\_PRECISION}}$$
+$$D_{new} = \frac{(Ann \cdot S + n \cdot D_P \cdot P) \times D}{(Ann - P) \times D + (n+1) \cdot D_P \cdot P}$$
 
 Where:
+- $Ann = A \times n$ (amplification factor scaled)
 - $S = \sum B_i$ (sum of balances)
 - $D_P = \frac{D^n}{\prod (n \cdot B_i)}$
-- $\text{AMP\_PRECISION} = 1000$
+- $P = 1000$ (AMP_PRECISION constant)
 
 **Calculating Y (token balance):**
 
@@ -100,14 +104,14 @@ Given invariant $D$ and all other balances, find $y$ using Newton's method:
 $$y_{new} = \frac{y^2 + c}{2y + b - D}$$
 
 Where:
-- $c = \frac{D^2 \cdot \text{AMP\_PRECISION}}{A \cdot n \cdot P} \times B_y$
-- $b = \frac{D \cdot \text{AMP\_PRECISION}}{A \cdot n} + S'$ (sum excluding $y$)
+- $c = \frac{D^2 \cdot P}{Ann \cdot \Pi} \times B_y$
+- $b = \frac{D \cdot P}{Ann} + S'$ (sum excluding $y$)
 
 **Spot Price (Numerical Approximation):**
 
-$$P \approx \frac{\text{calc\_out\_given\_in}(ref\_amount)}{ref\_amount}$$
+$$SpotPrice \approx \frac{AmountOut}{AmountIn}$$
 
-We use a small reference amount (10^9) to calculate instantaneous price.
+We calculate `calc_out_given_in(ref_amount)` with a small reference amount (10^9) to get instantaneous price.
 
 ---
 
