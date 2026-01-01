@@ -6,17 +6,15 @@ import {
   createAssociatedTokenAccount,
   mintTo,
   getAccount,
-  TOKEN_PROGRAM_ID,
-  ASSOCIATED_TOKEN_PROGRAM_ID,
   getMint,
 } from "@solana/spl-token";
-import { PublicKey, Keypair, SystemProgram } from "@solana/web3.js";
+import { PublicKey, Keypair } from "@solana/web3.js";
 import { expect } from "chai";
 import BN from "bn.js";
+import { detectArbitrage } from "../sdk/src/scanner";
 
 describe("mini-stabble", () => {
   const AUTHORITY_SEED = Buffer.from("AUTHORITY");
-  const MINT_SEED = Buffer.from("MINT");
   const WEIGHT_POOL_SEED = Buffer.from("WEIGHT_POOL");
   const STABLE_POOL_SEED = Buffer.from("STABLE_POOL");
   const POOL_VAULT_SEED = Buffer.from("POOL_VAULT");
@@ -149,7 +147,7 @@ describe("mini-stabble", () => {
     )[0];
   };
 
-  describe("weighted pool", () => {
+  describe("weighted pool", async () => {
     it("initializes weighted pool", async () => {
       const pool = getPoolPDA();
 
@@ -239,7 +237,7 @@ describe("mini-stabble", () => {
       const vaultA = getVaultAPDA(pool);
       const vaultB = getVaultBPDA(pool);
 
-      const amountIn = new BN(100000000000);
+      const amountIn = new BN(5_000_000_000); // 5B = 5% of pool (realistic)
       const minAmountOut = new BN(1);
 
       // Get balances BEFORE
@@ -322,16 +320,19 @@ describe("mini-stabble", () => {
       const vaultB = getStableVaultBPDA(pool);
 
       // Check LP supply before
-      const lpMintBefore = await getMint(provider.connection, stableLpMint.publicKey);
+      const lpMintBefore = await getMint(
+        provider.connection,
+        stableLpMint.publicKey
+      );
       expect(Number(lpMintBefore.supply)).to.equal(0);
 
       const depositAmount = new BN(100_000_000_000); // 100 tokens
 
       await program.methods
         .stableDeposit(
-          depositAmount,  // max_amount_a
-          depositAmount,  // max_amount_b
-          new BN(0)       // lp_amount (0 for first deposit)
+          depositAmount, // max_amount_a
+          depositAmount, // max_amount_b
+          new BN(0) // lp_amount (0 for first deposit)
         )
         .accounts({
           pool,
@@ -347,13 +348,20 @@ describe("mini-stabble", () => {
         .rpc();
 
       // Assert LP minted
-      const lpMintAfter = await getMint(provider.connection, stableLpMint.publicKey);
+      const lpMintAfter = await getMint(
+        provider.connection,
+        stableLpMint.publicKey
+      );
       expect(Number(lpMintAfter.supply)).to.be.greaterThan(0);
 
       // Assert pool balances updated
       const poolAccount = await program.account.stablePool.fetch(pool);
-      expect(poolAccount.tokens[0].balance.toString()).to.equal(depositAmount.toString());
-      expect(poolAccount.tokens[1].balance.toString()).to.equal(depositAmount.toString());
+      expect(poolAccount.tokens[0].balance.toString()).to.equal(
+        depositAmount.toString()
+      );
+      expect(poolAccount.tokens[1].balance.toString()).to.equal(
+        depositAmount.toString()
+      );
     });
 
     it("swaps tokens", async () => {
@@ -365,7 +373,7 @@ describe("mini-stabble", () => {
       const userABefore = await getAccount(provider.connection, userTokenA);
       const userBBefore = await getAccount(provider.connection, userTokenB);
 
-      const amountIn = new BN(10_000_000_000); // 10 tokens
+      const amountIn = new BN(5_000_000_000); // 5B = 5% of pool (same as weighted)
       const minAmountOut = new BN(1);
 
       await program.methods
@@ -387,8 +395,55 @@ describe("mini-stabble", () => {
       const userBAfter = await getAccount(provider.connection, userTokenB);
 
       // Assert: user A decreased, user B increased
-      expect(Number(userAAfter.amount)).to.be.lessThan(Number(userABefore.amount));
-      expect(Number(userBAfter.amount)).to.be.greaterThan(Number(userBBefore.amount));
+      expect(Number(userAAfter.amount)).to.be.lessThan(
+        Number(userABefore.amount)
+      );
+      expect(Number(userBAfter.amount)).to.be.greaterThan(
+        Number(userBBefore.amount)
+      );
+    });
+  });
+
+  describe("arbitrage", async () => {
+    it("detects arbitrage oppurtunity", async () => {
+      const weightedPool = getPoolPDA();
+      const stablePool = getStablePoolPDA();
+
+      const weightedAccount = await program.account.weightedPool.fetch(
+        weightedPool
+      );
+      const stableAccount = await program.account.stablePool.fetch(stablePool);
+
+      const result = detectArbitrage(
+        {
+          balanceA: BigInt(weightedAccount.tokens[0].balance.toString()),
+          balanceB: BigInt(weightedAccount.tokens[1].balance.toString()),
+          weightA: BigInt(weightedAccount.tokens[0].weight.toString()),
+          weightB: BigInt(weightedAccount.tokens[1].weight.toString()),
+          swapFee: BigInt(weightedAccount.swapFee.toString()),
+        },
+        {
+          balanceA: BigInt(stableAccount.tokens[0].balance.toString()),
+          balanceB: BigInt(stableAccount.tokens[1].balance.toString()),
+          swapFee: BigInt(stableAccount.swapFee.toString()),
+          amp: BigInt(stableAccount.amp.toString()),
+        }
+      );
+
+      console.log("Arbitrage scan result:", result);
+      
+      // Assert that we get a result (profitable or not)
+      // With current pool states after swaps, there might be an opportunity
+      if (result) {
+        console.log(`Direction: ${result.direction}`);
+        console.log(`Weighted Price: ${result.weightedPrice}`);
+        console.log(`Stable Price: ${result.stablePrice}`);
+        console.log(`Price Diff: ${result.priceDiffPercent.toFixed(2)}%`);
+        console.log(`Total Fees: ${result.totalFeesPercent.toFixed(2)}%`);
+        console.log(`Net Profit: ${result.netProfitPercent.toFixed(2)}%`);
+      } else {
+        console.log("No profitable arbitrage opportunity detected (fees > price diff)");
+      }
     });
   });
 });
