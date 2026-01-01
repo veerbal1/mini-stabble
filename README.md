@@ -2,6 +2,8 @@
 
 > A Solana DEX implementation inspired by [Stabble](https://stabble.org), featuring **Weighted Pools**, **StableSwap Pools**, and an **Arbitrage Scanner** — demonstrating deep understanding of AMM mathematics and Stabble's Smart Liquidity Architecture (SLA).
 
+**🚀 Deployed on Devnet:** [`FURtuxyXWgpnETkNho8PL6mpuRh9mCnVsWgUY14JzusX`](https://explorer.solana.com/address/FURtuxyXWgpnETkNho8PL6mpuRh9mCnVsWgUY14JzusX?cluster=devnet)
+
 ---
 
 ## 🎯 Why I Built This
@@ -240,7 +242,7 @@ const result = detectArbitrage(
 - [ ] `execute_arbitrage` instruction (atomic buy→sell)
 - [ ] Profit routing to LPs (Stabble's SLA innovation)
 - [ ] Multi-hop router
-- [ ] Devnet deployment
+- [x] ~~Devnet deployment~~ ✅
 
 ---
 
