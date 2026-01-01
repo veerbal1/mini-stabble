@@ -1,173 +1,243 @@
-# Mini-Stabble: Weighted Pool DEX Implementation
+# Mini-Stabble DEX
 
-A Solana DEX implementation inspired by Stabble, featuring weighted pools with production-grade fixed-point arithmetic.
+> A Solana DEX implementation inspired by [Stabble](https://stabble.org), featuring **Weighted Pools**, **StableSwap Pools**, and an **Arbitrage Scanner** — demonstrating deep understanding of AMM mathematics and Stabble's Smart Liquidity Architecture (SLA).
 
-## Overview
+---
 
-This project implements the core math libraries for a decentralized exchange (DEX) supporting **weighted pools** — pools where tokens can have different weights (e.g., 80/20 ETH/USDC instead of the traditional 50/50).
+## 🎯 Why I Built This
 
-## Architecture
+I studied Stabble's whitepaper and was impressed by their **internal arbitrage** concept — capturing MEV profits for LPs instead of external bots. This project demonstrates:
+
+1. **Deep DeFi math understanding** — Implemented Newton-Raphson for StableSwap from scratch
+2. **Multi-pool architecture** — Both Weighted and Stable pools with shared math library
+3. **Arbitrage detection** — TypeScript scanner comparing prices across pool types (simplified SLA)
+
+---
+
+## 🏗️ Architecture
 
 ```
-programs/mini-stabble/
-└── src/
-    ├── lib.rs           # Program entrypoint
-    ├── errors.rs        # Custom error types
-    ├── math/
-    │   ├── mod.rs       # Math module exports
-    │   ├── fixed.rs     # Fixed-point arithmetic
-    │   └── weighted.rs  # Weighted pool math
-    ├── state/           # Account structures (coming soon)
-    └── instructions/    # Program instructions (coming soon)
+mini-stabble/
+├── programs/mini-stabble/
+│   └── src/
+│       ├── lib.rs                    # Program entrypoint
+│       ├── errors.rs                 # Custom errors
+│       ├── constants.rs              # Fee precision, etc.
+│       ├── math/
+│       │   ├── fixed.rs              # Fixed-point arithmetic (SCALE = 10^9)
+│       │   ├── weighted.rs           # Weighted pool math
+│       │   └── stable.rs             # StableSwap math (Newton-Raphson)
+│       ├── state/
+│       │   ├── weighted_pool.rs      # WeightedPool account
+│       │   └── stable_pool.rs        # StablePool account
+│       └── instructions/
+│           ├── initialize_weighted_pool.rs
+│           ├── initialize_stable_pool.rs
+│           ├── swap.rs               # Weighted swap
+│           ├── stable_swap.rs        # Stable swap
+│           ├── deposit.rs            # Weighted deposit
+│           └── stable_deposit.rs     # Stable deposit
+├── sdk/src/
+│   ├── spotPrice.ts                  # Spot price calculation
+│   └── scanner.ts                    # Arbitrage opportunity detector
+└── tests/
+    └── mini-stabble.ts               # 7 integration tests
 ```
 
 ---
 
-## Fixed-Point Arithmetic (`math/fixed.rs`)
+## 📐 Mathematical Foundations
 
-### Why Fixed-Point?
+### Fixed-Point Arithmetic
 
-Solana programs cannot use floating-point numbers (`f32`, `f64`). All calculations use **fixed-point integers** with a scale factor.
+All calculations use fixed-point integers to avoid floating-point non-determinism:
 
-```
-SCALE = 1,000,000,000 (10^9)
+$$\text{SCALE} = 10^9$$
 
-Example: 0.5 is stored as 500,000,000
-         1.0 is stored as 1,000,000,000
-```
+$$\text{value} = \text{raw\_integer} \times 10^{-9}$$
 
-### Implemented Traits
+### Weighted Pool Math (Balancer-style)
 
-| Trait | Methods | Purpose |
-|-------|---------|---------|
-| `FixedMul` | `mul_down`, `mul_up` | Multiply two fixed-point numbers |
-| `FixedDiv` | `div_down`, `div_up` | Divide two fixed-point numbers |
-| `FixedComplement` | `complement` | Calculate `1 - x` |
-| `FixedPow` | `pow_down`, `pow_up` | Raise to a power |
+**Invariant:**
 
-### Rounding Strategy
+$$K = \prod_{i=0}^{n} B_i^{W_i}$$
 
-All operations that could result in fractional values must round. We always round **in favor of the protocol**:
+Where $B_i$ = balance, $W_i$ = normalized weight (weights sum to 1).
 
-- When calculating what user **receives** → round **DOWN** (user gets less)
-- When calculating what user **pays** → round **UP** (user pays more)
-
----
-
-## Weighted Pool Math (`math/weighted.rs`)
-
-### The Invariant Formula
-
-Weighted pools maintain a constant invariant:
-
-$$K = \prod_{i=0}^{n} B_i^{W_i} = B_0^{W_0} \times B_1^{W_1} \times ... \times B_n^{W_n}$$
-
-Where:
-- $B_i$ = Balance of token $i$
-- $W_i$ = Weight of token $i$ (weights sum to 1)
-- $K$ = Invariant (constant before and after swaps)
-
-**Example:** A 50/50 pool with 100 SOL and 400 USDC:
-```
-K = 100^0.5 × 400^0.5 = 10 × 20 = 200
-```
-
-### Swap Formula: `calc_out_given_in`
-
-Given an input amount, calculate the output:
+**Swap: Output Given Input**
 
 $$\Delta_{out} = B_{out} \times \left(1 - \left(\frac{B_{in}}{B_{in} + \Delta_{in}}\right)^{\frac{W_{in}}{W_{out}}}\right)$$
 
-**Implementation:**
-```rust
-pub fn calc_out_given_in(
-    balance_in: u128,
-    weight_in: u128,
-    balance_out: u128,
-    weight_out: u128,
-    amount_in: u128,
-) -> Result<u128, MiniStabbleError> {
-    // base = balance_in / (balance_in + amount_in)
-    let base = balance_in.div_up(...)?;
-    
-    // exponent = weight_in / weight_out
-    let exponent = weight_in.div_down(weight_out)?;
-    
-    // power = base ^ exponent
-    let power = base.pow_up(exponent)?;
-    
-    // amount_out = balance_out × (1 - power)
-    let complement = power.complement();
-    let amount_out = balance_out.mul_down(complement)?;
-    
-    Ok(amount_out)
-}
-```
+**Spot Price:**
 
-### Swap Formula: `calc_in_given_out`
-
-Given a desired output, calculate the required input:
-
-$$\Delta_{in} = B_{in} \times \left(\left(\frac{B_{out}}{B_{out} - \Delta_{out}}\right)^{\frac{W_{out}}{W_{in}}} - 1\right)$$
-
-**Key Difference:** Here the base is > 1, so rounding logic changes accordingly.
+$$P = \frac{W_{in}}{W_{out}} \times \frac{B_{out}}{B_{in}}$$
 
 ---
 
-## Rounding Strategy Deep Dive
+### StableSwap Math (Curve-style)
 
-### For `calc_out_given_in` (user receives LESS):
+**Invariant (Newton-Raphson):**
 
-| Step | Operation | Rounding | Reasoning |
-|------|-----------|----------|-----------|
-| base | `div_up` | Larger base → larger power | |
-| exponent | `div_down` | For base < 1: smaller exp → larger power | |
-| power | `pow_up` | Larger power → smaller complement | |
-| amount_out | `mul_down` | User receives less | Protects pool |
+$$An^n\sum x_i + D = ADn^n + \frac{D^{n+1}}{n^n \prod x_i}$$
 
-### For `calc_in_given_out` (user pays MORE):
+For 2 tokens, simplified:
 
-| Step | Operation | Rounding | Reasoning |
-|------|-----------|----------|-----------|
-| base | `div_up` | Larger base → larger power | |
-| exponent | `div_up` | For base > 1: larger exp → larger power | |
-| power | `pow_up` | Larger power → larger complement | |
-| amount_in | `mul_up` | User pays more | Protects pool |
+$$4A(x + y) + D = 4AD + \frac{D^3}{4xy}$$
+
+**Newton's Iteration:**
+
+$$D_{new} = \frac{(A \cdot n \cdot S + n \cdot D_P \cdot \text{AMP\_PRECISION}) \times D}{(A \cdot n - \text{AMP\_PRECISION}) \times D + (n+1) \cdot D_P \cdot \text{AMP\_PRECISION}}$$
+
+Where:
+- $S = \sum B_i$ (sum of balances)
+- $D_P = \frac{D^n}{\prod (n \cdot B_i)}$
+- $\text{AMP\_PRECISION} = 1000$
+
+**Calculating Y (token balance):**
+
+Given invariant $D$ and all other balances, find $y$ using Newton's method:
+
+$$y_{new} = \frac{y^2 + c}{2y + b - D}$$
+
+Where:
+- $c = \frac{D^2 \cdot \text{AMP\_PRECISION}}{A \cdot n \cdot P} \times B_y$
+- $b = \frac{D \cdot \text{AMP\_PRECISION}}{A \cdot n} + S'$ (sum excluding $y$)
+
+**Spot Price (Numerical Approximation):**
+
+$$P \approx \frac{\text{calc\_out\_given\_in}(ref\_amount)}{ref\_amount}$$
+
+We use a small reference amount (10^9) to calculate instantaneous price.
 
 ---
 
-## Dependencies
+### Arbitrage Detection
 
-- `anchor-lang` - Solana program framework
-- `fixed` - Fixed-point number types
-- `fixed-exp` - Fixed-point exponentiation (adapted from Stabble)
+**Price Difference:**
+
+$$\text{priceDiff\%} = \frac{|P_{weighted} - P_{stable}|}{\min(P_{weighted}, P_{stable})} \times 100$$
+
+**Fee Consideration:**
+
+$$\text{totalFees\%} = \text{weightedFee\%} + \text{stableFee\%}$$
+
+$$\text{netProfit\%} = \text{priceDiff\%} - \text{totalFees\%}$$
+
+**Profitable if:**
+
+$$\text{netProfit\%} > \text{minThreshold\%}$$
 
 ---
 
-## Building
+## ✅ What's Implemented
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| **Fixed-Point Math** | ✅ | `mul_down`, `mul_up`, `div_down`, `div_up`, `pow_down`, `pow_up`, `complement` |
+| **Weighted Pool** | ✅ | Initialize, Swap, Deposit |
+| **StableSwap Pool** | ✅ | Initialize, Swap, Deposit with Newton-Raphson |
+| **Spot Price (SDK)** | ✅ | Both pool types |
+| **Arbitrage Scanner** | ✅ | Fee-aware detection |
+| **Integration Tests** | ✅ | 7 tests passing |
+
+---
+
+## 🧪 Running Tests
 
 ```bash
 cd mini-stabble
+
+# Build
 anchor build
+
+# Run all tests
+anchor test
+
+# Run Rust unit tests only
+cargo test --lib
+```
+
+**Test Output:**
+```
+  mini-stabble
+    weighted pool
+      ✔ initializes weighted pool
+      ✔ deposits liquidity
+      ✔ swaps tokens
+    Stable Pool
+      ✔ initializes stable pool
+      ✔ deposits liquidity
+      ✔ swaps tokens
+    arbitrage
+      ✔ detects arbitrage opportunity
+
+  7 passing
 ```
 
 ---
 
-## Roadmap
+## 📊 Arbitrage Scanner Usage
 
-- [x] Fixed-point arithmetic library
-- [x] Weighted pool invariant calculation
-- [x] Weighted pool swap functions
-- [ ] StableSwap math (Curve-style pools)
-- [ ] Pool state accounts
-- [ ] Swap instruction handlers
-- [ ] Internal arbitrage logic
-- [ ] TypeScript SDK
+```typescript
+import { detectArbitrage } from './sdk/src/scanner';
+
+const result = detectArbitrage(
+  {
+    balanceA: 100_000_000_000n,
+    balanceB: 95_000_000_000n,
+    weightA: 500_000_000n,  // 0.5
+    weightB: 500_000_000n,  // 0.5
+    swapFee: 3_000_000n,    // 0.3%
+  },
+  {
+    balanceA: 100_000_000_000n,
+    balanceB: 100_000_000_000n,
+    swapFee: 3_000_000n,
+    amp: 100_000n,          // 100 * AMP_PRECISION
+  }
+);
+
+// Output:
+// {
+//   weightedPrice: 0.95,
+//   stablePrice: 1.0,
+//   priceDiffPercent: 5.26,
+//   totalFeesPercent: 0.6,
+//   netProfitPercent: 4.66,
+//   profitable: true,
+//   direction: 'weighted_to_stable'
+// }
+```
 
 ---
 
-## References
+## 🔗 Technical Decisions
 
-- [Balancer V2 Weighted Math](https://github.com/balancer-labs/balancer-v2-monorepo/blob/master/pkg/pool-weighted/contracts/WeightedMath.sol)
-- [Stabble DEX](https://stabble.org)
-- [Curve StableSwap Whitepaper](https://curve.fi/files/stableswap-paper.pdf)
+| Decision | Why |
+|----------|-----|
+| **Newton-Raphson for StableSwap** | Matches Curve's approach for finding invariant D |
+| **U192 for intermediate math** | Prevents overflow in D² calculations |
+| **Spot price via small swap** | More accurate than derivative for imbalanced pools |
+| **Fee-aware arbitrage** | Real-world profitability requires considering both swap fees |
+| **Shared math library** | Code reuse between pool types |
+
+---
+
+## 📚 References
+
+- [Stabble Whitepaper](https://stabble.org)
+- [Curve StableSwap Paper](https://curve.fi/files/stableswap-paper.pdf)
+- [Balancer V2 Weighted Math](https://github.com/balancer-labs/balancer-v2-monorepo)
+
+---
+
+## 🚀 Future Work
+
+- [ ] `execute_arbitrage` instruction (atomic buy→sell)
+- [ ] Profit routing to LPs (Stabble's SLA innovation)
+- [ ] Multi-hop router
+- [ ] Devnet deployment
+
+---
+
+**Built by Veerbal Singh** | Inspired by Stabble's Smart Liquidity Architecture
