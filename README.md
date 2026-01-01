@@ -54,7 +54,7 @@ All calculations use fixed-point integers to avoid floating-point non-determinis
 
 $$\text{SCALE} = 10^9$$
 
-$$\text{value} = \text{raw\_integer} \times 10^{-9}$$
+$$value = raw\_integer \times 10^{-9}$$
 
 ### Weighted Pool Math (Balancer-style)
 
